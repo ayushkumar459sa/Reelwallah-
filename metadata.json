@@ -1,0 +1,9 @@
+{
+  "name": "REEL WALLAH",
+  "description": "Mobile-first educational platform for IIT-JEE aspirants. Peer learning, rapid mock quizzes, live study chat, and step-by-step doubt solving.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
