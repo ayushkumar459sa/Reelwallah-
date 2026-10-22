@@ -577,19 +577,75 @@ export const StudyRoomsView: React.FC<StudyRoomsViewProps> = ({ onOpenAuth }) =>
                 {/* 1. Current Real User Camera Box */}
                 <div className="relative aspect-video rounded-2xl bg-[#101426] border border-[#252D54] overflow-hidden flex items-center justify-center group">
                   {isCameraOn ? (
-                    <video
-                      ref={(el) => {
-                        videoRef.current = el;
-                        if (el && mediaStreamRef.current && el.srcObject !== mediaStreamRef.current) {
-                          el.srcObject = mediaStreamRef.current;
-                          el.play().catch(e => console.log('Video auto-play catch:', e));
-                        }
-                      }}
-                      autoPlay
-                      muted
-                      playsInline
-                      className="w-full h-full object-cover -scale-x-100"
-                    />
+                    cameraMode === 'real' ? (
+                      <div className="relative w-full h-full">
+                        <video
+                          ref={(el) => {
+                            if (el) {
+                              videoRef.current = el;
+                              el.muted = true;
+                              el.defaultMuted = true;
+                              el.setAttribute('muted', '');
+                              el.setAttribute('playsinline', '');
+                              el.setAttribute('webkit-playsinline', '');
+                              if (mediaStreamRef.current && el.srcObject !== mediaStreamRef.current) {
+                                el.srcObject = mediaStreamRef.current;
+                              }
+                              el.play().catch(e => console.log('Video auto-play catch:', e));
+                            }
+                          }}
+                          autoPlay
+                          muted
+                          playsInline
+                          className={`w-full h-full object-cover transition-transform duration-200 ${isMirrored ? "-scale-x-100" : ""}`}
+                        />
+                        <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
+                          <button
+                            type="button"
+                            onClick={() => setIsMirrored(!isMirrored)}
+                            className="px-2 py-0.5 rounded-lg bg-black/70 hover:bg-black text-[9px] font-bold text-white border border-white/10 backdrop-blur-sm transition-all"
+                            title="Toggle Video Mirroring"
+                          >
+                            {isMirrored ? 'Mirror: On' : 'Mirror: Off'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Live Aspirant Virtual Cam Stream */
+                      <div className="relative w-full h-full bg-gradient-to-br from-[#12162b] via-[#151b38] to-[#1c183d] flex flex-col items-center justify-center p-4 text-center overflow-hidden">
+                        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#37D9F5_1px,transparent_1px)] [background-size:12px_12px]" />
+                        <div className="relative mb-2">
+                          <div className="absolute inset-0 rounded-2xl bg-[#7857FF]/30 blur-xl animate-pulse" />
+                          <UserAvatar
+                            src={user?.avatar}
+                            name={user?.name || 'Aspirant'}
+                            size="lg"
+                            className="relative z-10"
+                          />
+                          <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 rounded-full bg-emerald-500 text-[8px] font-black text-black z-20 flex items-center gap-0.5 shadow-md">
+                            <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
+                            LIVE
+                          </span>
+                        </div>
+                        <div className="relative z-10 space-y-0.5">
+                          <div className="text-xs font-black text-white flex items-center justify-center gap-1.5">
+                            <span>{user?.name || 'Aspirant'}</span>
+                            <span className="text-[10px] text-[#37D9F5] font-mono">({user?.dreamIit?.split(' ')[0] || 'IIT'})</span>
+                          </div>
+                          <p className="text-[10px] text-emerald-400 font-semibold flex items-center justify-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span>Focus Active • {formatTimer(timeLeft)} left</span>
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={toggleCamera}
+                          className="relative z-10 mt-2 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] text-slate-300 hover:text-white border border-white/10 transition-colors"
+                        >
+                          Retry Hardware Webcam 📷
+                        </button>
+                      </div>
+                    )
                   ) : (
                     <div className="flex flex-col items-center justify-center p-4 text-center">
                       <UserAvatar

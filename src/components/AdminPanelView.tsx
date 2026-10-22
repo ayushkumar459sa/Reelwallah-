@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { PlatformStats, User, MockTest, WithdrawalRequest, Reel, Doubt } from '../types.js';
+import type { PlatformStats, User, MockTest, Reel, Doubt, UpiPaymentRequest } from '../types.js';
 import { useAuth } from '../context/AuthContext.js';
 import {
   Shield,
@@ -16,7 +16,13 @@ import {
   Ban,
   ArrowRight,
   TrendingUp,
-  FileSpreadsheet
+  CreditCard,
+  Copy,
+  Check,
+  MessageSquare,
+  Crown,
+  Sparkles,
+  ExternalLink
 } from 'lucide-react';
 
 interface AdminPanelViewProps {
@@ -25,14 +31,21 @@ interface AdminPanelViewProps {
 
 export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) => {
   const { user, token, isAdmin, isLoggedIn } = useAuth();
-  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'tests' | 'moderation'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'payments' | 'users' | 'tests' | 'moderation'>('payments');
 
   // Stats & Audit
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
+  // Payment Requests
+  const [subscriptionRequests, setSubscriptionRequests] = useState<UpiPaymentRequest[]>([]);
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null);
+  const [copiedUtrId, setCopiedUtrId] = useState<string | null>(null);
+
   // Users
   const [usersList, setUsersList] = useState<User[]>([]);
+  const [processingUserId, setProcessingUserId] = useState<string | null>(null);
 
   // Tests
   const [testsList, setTestsList] = useState<MockTest[]>([]);
@@ -66,21 +79,28 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
         setAuditLogs(sData.auditLogs || []);
       }
 
-      // 2. Users
+      // 2. UPI Subscription Requests
+      const pRes = await fetch('/api/admin/subscription-requests', { headers: { Authorization: `Bearer ${token}` } });
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        setSubscriptionRequests(pData.requests || []);
+      }
+
+      // 3. Users
       const uRes = await fetch('/api/admin/users', { headers: { Authorization: `Bearer ${token}` } });
       if (uRes.ok) {
         const uData = await uRes.json();
         setUsersList(uData.users || []);
       }
 
-      // 3. Tests
+      // 4. Tests
       const tRes = await fetch('/api/admin/tests', { headers: { Authorization: `Bearer ${token}` } });
       if (tRes.ok) {
         const tData = await tRes.json();
         setTestsList(tData.tests || []);
       }
 
-      // 4. Moderation
+      // 5. Moderation
       const mRes = await fetch('/api/admin/moderation', { headers: { Authorization: `Bearer ${token}` } });
       if (mRes.ok) {
         const mData = await mRes.json();
@@ -104,7 +124,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
         <Shield className="w-12 h-12 text-amber-400 mx-auto" />
         <h2 className="text-xl font-bold text-white">Administrator Access Required</h2>
         <p className="text-xs text-slate-400">
-          Please log in as administrator ({'ayush459sa@gmail.com'}) using verified email OTP.
+          Please log in with verified administrator credentials (ayush459sa@gmail.com / ushakannaujiya90@gmail.com).
         </p>
         <button
           onClick={onOpenAuth}
@@ -122,11 +142,92 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
         <AlertTriangle className="w-12 h-12 text-rose-400 mx-auto" />
         <h2 className="text-xl font-bold text-white">Access Denied</h2>
         <p className="text-xs text-slate-400">
-          Administrator privileges are strictly restricted to verified accounts ({'ayush459sa@gmail.com'}). Current account: {user?.email}
+          Administrator privileges are strictly restricted to verified platform owners. Current account: {user?.email}
         </p>
       </div>
     );
   }
+
+  // Approve UPI Payment Request & Upgrade to PRO
+  const handleApprovePayment = async (requestId: string) => {
+    setProcessingPaymentId(requestId);
+    try {
+      const res = await fetch(`/api/admin/subscription-requests/${requestId}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSubscriptionRequests(prev =>
+          prev.map(r => (r.id === requestId ? { ...r, status: 'approved', processedAt: new Date().toISOString() } : r))
+        );
+        // Refresh users list so pro badge is immediately visible
+        setUsersList(prev =>
+          prev.map(u => (u.id === data.user?.id ? { ...u, isSubscribed: true, freeAttemptsLeft: 99999 } : u))
+        );
+      } else {
+        alert(data.error || 'Failed to approve request.');
+      }
+    } catch (err) {
+      console.error('Error approving payment:', err);
+    } finally {
+      setProcessingPaymentId(null);
+    }
+  };
+
+  // Reject UPI Payment Request
+  const handleRejectPayment = async (requestId: string) => {
+    const reason = prompt('Reason for rejection (e.g. UTR not matching or invalid amount):', 'UTR verification failed');
+    if (reason === null) return;
+
+    setProcessingPaymentId(requestId);
+    try {
+      const res = await fetch(`/api/admin/subscription-requests/${requestId}/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ reason })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSubscriptionRequests(prev =>
+          prev.map(r => (r.id === requestId ? { ...r, status: 'rejected', processedAt: new Date().toISOString() } : r))
+        );
+      } else {
+        alert(data.error || 'Failed to reject request.');
+      }
+    } catch (err) {
+      console.error('Error rejecting payment:', err);
+    } finally {
+      setProcessingPaymentId(null);
+    }
+  };
+
+  // Direct 1-Click Toggle PRO for any User
+  const handleToggleUserPro = async (userId: string) => {
+    setProcessingUserId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/toggle-pro`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUsersList(prev => prev.map(u => (u.id === userId ? data.user : u)));
+      } else {
+        alert(data.error || 'Failed to toggle Pro status.');
+      }
+    } catch (err) {
+      console.error('Error toggling Pro status:', err);
+    } finally {
+      setProcessingUserId(null);
+    }
+  };
 
   // Toggle Suspend User
   const handleToggleSuspend = async (userId: string) => {
@@ -164,6 +265,26 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
     }
   };
 
+  // Resolve moderation report
+  const handleResolveReport = async (type: 'reel' | 'doubt', id: string, action: 'keep' | 'delete') => {
+    try {
+      const res = await fetch('/api/admin/moderation/resolve', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ type, id, action })
+      });
+      if (res.ok) {
+        if (type === 'reel') setReportedReels(prev => prev.filter(r => r.id !== id));
+        if (type === 'doubt') setReportedDoubts(prev => prev.filter(d => d.id !== id));
+      }
+    } catch (err) {
+      console.error('Moderation resolve failed:', err);
+    }
+  };
+
   // Create Mock Test
   const handleCreateNewTest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,7 +298,6 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
           return;
         }
       } else {
-        // Default high-yield section template
         parsedSections = [
           {
             id: 'sec-p-custom',
@@ -232,7 +352,6 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
     }
   };
 
-  // Quick helper to fill sample JSON for testing
   const fillSampleJson = () => {
     const sample = [
       {
@@ -240,17 +359,17 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
         name: 'Mathematics',
         questions: [
           {
-            id: 'q-sample-1',
+            id: 'q-m1',
             questionNumber: 1,
             sectionId: 'sec-sample-math',
             type: 'single_choice',
-            questionText: 'If z is a complex number such that |z - 1| = 1, then the locus of point z in Argand plane is a:',
-            options: ['Circle of radius 1 centered at (1, 0)', 'Parabola with vertex at (1, 0)', 'Straight line parallel to imaginary axis', 'Ellipse with eccentricity 0.5'],
-            correctOption: 0,
+            questionText: 'The value of lim(x->0) (sin 2x) / x is:',
+            options: ['0', '1', '2', 'Does not exist'],
+            correctOption: 2,
             marksCorrect: 4,
             marksIncorrect: -1,
-            explanation: '|z - z0| = r represents a circle centered at z0 with radius r. Here z0 = 1 + 0i and r = 1.',
-            keyFormula: '|z - z0| = r (Standard circle in complex plane)',
+            explanation: 'Using standard limit lim(θ->0) sin(θ)/θ = 1, lim (sin 2x)/x = 2 * lim(sin 2x)/(2x) = 2 * 1 = 2.',
+            keyFormula: 'lim_{x->0} sin(kx)/x = k',
             difficulty: 'Easy'
           }
         ]
@@ -259,60 +378,60 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
     setJsonImportText(JSON.stringify(sample, null, 2));
   };
 
-  // Resolve Reported Content
-  const handleResolveReport = async (type: 'reel' | 'doubt', id: string, action: 'keep' | 'delete') => {
-    try {
-      const res = await fetch('/api/admin/moderation/resolve', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ type, id, action })
-      });
-      if (res.ok) {
-        if (type === 'reel') {
-          setReportedReels(prev => prev.filter(r => r.id !== id));
-        } else {
-          setReportedDoubts(prev => prev.filter(d => d.id !== id));
-        }
-      }
-    } catch (err) {
-      console.error('Error resolving report:', err);
-    }
+  const handleCopyUtr = (utr: string, id: string) => {
+    navigator.clipboard.writeText(utr);
+    setCopiedUtrId(id);
+    setTimeout(() => setCopiedUtrId(null), 2000);
   };
 
+  const pendingPaymentsCount = subscriptionRequests.filter(r => r.status === 'pending').length;
+
+  const filteredPayments = subscriptionRequests.filter(r => {
+    if (paymentFilter === 'all') return true;
+    return r.status === paymentFilter;
+  });
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+    <div className="max-w-7xl mx-auto space-y-6 pb-20 animate-in fade-in duration-200">
       {/* Top Banner */}
-      <div className="rounded-3xl bg-gradient-to-r from-[#171C34] via-[#101426] to-[#1c1836] border border-[#252D54] p-6 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="p-6 rounded-3xl bg-gradient-to-r from-[#171C34] via-[#1F1744] to-[#171C34] border border-[#252D54] flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold mb-2">
             <Shield className="w-3.5 h-3.5" />
-            <span>AUTHENTICATED LEAD ADMIN CONSOLE</span>
+            <span>LEAD ADMIN OPERATIONS CONSOLE</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-black text-white">REEL WALLAH Master Operations</h2>
           <p className="text-xs text-slate-400 mt-1">
-            Logged in as <strong>{user?.email}</strong>. Verified role: Administrator.
+            Logged in as <strong className="text-slate-200">{user?.email}</strong> • UPI Target: <strong className="text-[#37D9F5] font-mono">ushakannaujiya90@okhdfcbank</strong> • WhatsApp: <strong className="text-emerald-400 font-mono">9839530890</strong>
           </p>
         </div>
 
         <button
           onClick={fetchAdminData}
-          className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold flex items-center gap-2 border border-[#252D54]"
+          className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold flex items-center gap-2 border border-[#252D54] transition-colors self-start md:self-auto"
         >
-          <RefreshCw className="w-3.5 h-3.5" />
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
           <span>Refresh Data</span>
         </button>
       </div>
 
-      {/* Tabs */}
+      {/* Navigation Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-[#252D54]">
         {[
+          {
+            id: 'payments',
+            label: `UPI Payments (${pendingPaymentsCount} Pending)`,
+            icon: CreditCard,
+            badge: pendingPaymentsCount > 0 ? pendingPaymentsCount : undefined
+          },
+          { id: 'users', label: `Aspirants (${usersList.length})`, icon: Users },
           { id: 'stats', label: 'Platform Stats & Audit', icon: TrendingUp },
-          { id: 'users', label: `Users (${usersList.length})`, icon: Users },
           { id: 'tests', label: `Mock Tests (${testsList.length})`, icon: FileCheck },
-          { id: 'moderation', label: `Moderation (${reportedReels.length + reportedDoubts.length})`, icon: AlertTriangle }
+          {
+            id: 'moderation',
+            label: `Moderation (${reportedReels.length + reportedDoubts.length})`,
+            icon: AlertTriangle
+          }
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -322,19 +441,303 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
               onClick={() => setActiveTab(tab.id as any)}
               className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
                 isActive
-                  ? 'bg-[#7857FF] text-white shadow-md'
+                  ? 'bg-gradient-to-r from-[#7857FF] to-[#37D9F5] text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
               <Icon className="w-4 h-4" />
               <span>{tab.label}</span>
+              {tab.badge !== undefined && (
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-black text-[10px] font-black">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* TAB 1: STATS & AUDIT LOGS */}
+      {/* TAB 1: UPI PAYMENT REQUESTS & PRO ACTIVATION */}
+      {/* ------------------------------------------------------------- */}
+      {activeTab === 'payments' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-emerald-400" />
+                <span>UPI Payment Verification & PRO Grants</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Payments made to <strong>ushakannaujiya90@okhdfcbank</strong> sent via WhatsApp (9839530890)
+              </p>
+            </div>
+
+            {/* Filter buttons */}
+            <div className="flex items-center gap-1.5 bg-[#171C34] p-1 rounded-2xl border border-[#252D54]">
+              {(['all', 'pending', 'approved', 'rejected'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setPaymentFilter(f)}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold capitalize transition-colors ${
+                    paymentFilter === f
+                      ? 'bg-[#7857FF] text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {f} {f === 'pending' && pendingPaymentsCount > 0 && `(${pendingPaymentsCount})`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredPayments.length === 0 ? (
+            <div className="p-12 rounded-3xl bg-[#171C34] border border-[#252D54] text-center space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto" />
+              <div className="text-sm font-bold text-white">No {paymentFilter !== 'all' ? paymentFilter : ''} payment submissions</div>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                When students pay via UPI and submit their UTR / WhatsApp receipt, they will appear here for instant 1-click PRO upgrade.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredPayments.map(req => {
+                const isPending = req.status === 'pending';
+                const isApproved = req.status === 'approved';
+                const isRejected = req.status === 'rejected';
+
+                return (
+                  <div
+                    key={req.id}
+                    className={`p-5 rounded-3xl bg-[#171C34] border transition-all ${
+                      isPending
+                        ? 'border-amber-500/40 shadow-lg shadow-amber-500/5'
+                        : isApproved
+                        ? 'border-emerald-500/30'
+                        : 'border-[#252D54] opacity-75'
+                    }`}
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                      {/* Left: User & Plan info */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            isPending
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                              : isApproved
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          }`}>
+                            {req.status}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-400">
+                            {new Date(req.submittedAt).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 pt-1">
+                          <div>
+                            <div className="text-base font-bold text-white flex items-center gap-2">
+                              <span>{req.userName}</span>
+                              <span className="text-xs font-normal text-slate-400 font-mono">({req.userEmail})</span>
+                            </div>
+                            <div className="text-xs text-slate-300 flex items-center gap-2 mt-0.5">
+                              <span className="text-[#37D9F5] font-semibold">{req.planName}</span>
+                              <span>•</span>
+                              <span className="text-emerald-400 font-bold font-mono text-sm">₹{req.amountInr}</span>
+                              <span>•</span>
+                              <span className="text-slate-400">Paid to: {req.upiId}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* UTR Box */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-xs text-slate-400 font-medium">UTR / Transaction Ref:</span>
+                          <span className="px-2.5 py-1 rounded-lg bg-[#101426] border border-[#252D54] font-mono text-xs text-white font-bold tracking-wider select-all">
+                            {req.utrNumber}
+                          </span>
+                          <button
+                            onClick={() => handleCopyUtr(req.utrNumber, req.id)}
+                            className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                            title="Copy UTR"
+                          >
+                            {copiedUtrId === req.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Right: Actions */}
+                      <div className="flex items-center gap-2 flex-wrap lg:flex-nowrap shrink-0">
+                        {/* WhatsApp Contact Link */}
+                        <a
+                          href={`https://wa.me/919839530890?text=${encodeURIComponent(`Hello! Regarding Reel Wallah Pro payment for ${req.userName} (${req.userEmail}) UTR: ${req.utrNumber}`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-[#252D54]"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>WhatsApp</span>
+                        </a>
+
+                        {isPending ? (
+                          <>
+                            <button
+                              onClick={() => handleRejectPayment(req.id)}
+                              disabled={processingPaymentId === req.id}
+                              className="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-colors disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+
+                            <button
+                              onClick={() => handleApprovePayment(req.id)}
+                              disabled={processingPaymentId === req.id}
+                              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:brightness-110 active:scale-95 text-black text-xs font-black shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {processingPaymentId === req.id ? (
+                                <span>Activating...</span>
+                              ) : (
+                                <>
+                                  <Check className="w-4 h-4 stroke-[3]" />
+                                  <span>✓ Approve & Make PRO</span>
+                                </>
+                              )}
+                            </button>
+                          </>
+                        ) : isApproved ? (
+                          <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                            <Crown className="w-3.5 h-3.5 text-amber-400" />
+                            <span>PRO Active</span>
+                          </div>
+                        ) : (
+                          <div className="px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold">
+                            Rejected
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* TAB 2: USERS MANAGEMENT & INSTANT PRO TOGGLE */}
+      {/* ------------------------------------------------------------- */}
+      {activeTab === 'users' && (
+        <div className="rounded-3xl bg-[#171C34] border border-[#252D54] p-6 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-white">Registered Aspirants & Students</h3>
+              <p className="text-xs text-slate-400">
+                You can directly grant or revoke unlimited PRO mock test access for any aspirant here.
+              </p>
+            </div>
+            <span className="text-xs text-slate-400 font-mono">{usersList.length} Total Accounts</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#101426] text-slate-400 border-b border-[#252D54]">
+                <tr>
+                  <th className="p-3 font-semibold">Student / User</th>
+                  <th className="p-3 font-semibold">Role</th>
+                  <th className="p-3 font-semibold">Target IIT</th>
+                  <th className="p-3 font-semibold">Streak</th>
+                  <th className="p-3 font-semibold">Pro Status</th>
+                  <th className="p-3 font-semibold text-right">Admin Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#252D54]">
+                {usersList.map(u => (
+                  <tr key={u.id} className="hover:bg-white/5 transition-colors">
+                    <td className="p-3 flex items-center gap-2.5">
+                      <img src={u.avatar} alt={u.name} className="w-8 h-8 rounded-full object-cover border border-[#252D54]" />
+                      <div>
+                        <div className="font-bold text-white flex items-center gap-1.5">
+                          <span>{u.name}</span>
+                          {u.isSubscribed && <Crown className="w-3.5 h-3.5 text-amber-400 inline" />}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">{u.email}</div>
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        u.role === 'admin' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-700 text-slate-300'
+                      }`}>
+                        {u.role.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="p-3 font-semibold text-[#37D9F5]">
+                      {u.dreamIit || 'IIT Bombay'}
+                    </td>
+                    <td className="p-3 font-mono text-orange-400 font-bold">
+                      {u.studyStreak || 1}d
+                    </td>
+                    <td className="p-3">
+                      {u.isSubscribed ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
+                          👑 Active Pro
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[11px] font-mono">
+                          {u.freeAttemptsLeft ?? 10} / 10 Free
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                      {/* Direct 1-Click PRO Grant Button */}
+                      <button
+                        onClick={() => handleToggleUserPro(u.id)}
+                        disabled={processingUserId === u.id}
+                        className={`px-3 py-1.5 rounded-xl font-bold text-[11px] transition-all shadow-sm ${
+                          u.isSubscribed
+                            ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 border border-amber-500/30'
+                            : 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:brightness-110 text-black font-extrabold'
+                        }`}
+                        title={u.isSubscribed ? 'Revoke PRO subscription' : 'Grant unlimited PRO mock tests'}
+                      >
+                        {processingUserId === u.id ? (
+                          '...'
+                        ) : u.isSubscribed ? (
+                          'Revoke PRO'
+                        ) : (
+                          '⚡ Make PRO'
+                        )}
+                      </button>
+
+                      {/* Suspend Toggle */}
+                      {u.email !== 'ayush459sa@gmail.com' && u.email !== 'ushakannaujiya90@gmail.com' && (
+                        <button
+                          onClick={() => handleToggleSuspend(u.id)}
+                          className={`px-2.5 py-1.5 rounded-xl font-bold text-[11px] ${
+                            u.isSuspended
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : 'bg-rose-500/20 text-rose-300'
+                          }`}
+                        >
+                          {u.isSuspended ? 'Unsuspend' : 'Suspend'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* TAB 3: STATS & AUDIT LOGS */}
       {/* ------------------------------------------------------------- */}
       {activeTab === 'stats' && stats && (
         <div className="space-y-6">
@@ -394,89 +797,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({ onOpenAuth }) =>
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* TAB 2: USERS MANAGEMENT */}
-      {/* ------------------------------------------------------------- */}
-      {activeTab === 'users' && (
-        <div className="rounded-3xl bg-[#171C34] border border-[#252D54] p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white">Registered Aspirants & Students</h3>
-            <span className="text-xs text-slate-400">{usersList.length} Accounts</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#101426] text-slate-400 border-b border-[#252D54]">
-                <tr>
-                  <th className="p-3 font-semibold">User</th>
-                  <th className="p-3 font-semibold">Role</th>
-                  <th className="p-3 font-semibold">Dream Target</th>
-                  <th className="p-3 font-semibold">Streak</th>
-                  <th className="p-3 font-semibold">Pro Sub</th>
-                  <th className="p-3 font-semibold">Status</th>
-                  <th className="p-3 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#252D54]">
-                {usersList.map(u => (
-                  <tr key={u.id} className="hover:bg-white/5 transition-colors">
-                    <td className="p-3 flex items-center gap-2">
-                      <img src={u.avatar} alt={u.name} className="w-7 h-7 rounded-full object-cover" />
-                      <div>
-                        <div className="font-bold text-white">{u.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">{u.email}</div>
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        u.role === 'admin' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-700 text-slate-300'
-                      }`}>
-                        {u.role.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="p-3 font-semibold text-[#37D9F5]">
-                      {u.dreamIit || 'IIT Aspirant'}
-                    </td>
-                    <td className="p-3 font-mono text-orange-400">
-                      {u.studyStreak || 1}d
-                    </td>
-                    <td className="p-3">
-                      {u.isSubscribed ? (
-                        <span className="text-emerald-400 font-bold">Active Pro</span>
-                      ) : (
-                        <span className="text-slate-400">{u.freeAttemptsLeft ?? 10}/10 Free</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {u.isSuspended ? (
-                        <span className="text-rose-400 font-bold">Suspended</span>
-                      ) : (
-                        <span className="text-emerald-400">Active</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-right space-x-2">
-                      {u.email !== 'ayush459sa@gmail.com' && (
-                        <button
-                          onClick={() => handleToggleSuspend(u.id)}
-                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] ${
-                            u.isSuspended
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : 'bg-rose-500/20 text-rose-300'
-                          }`}
-                        >
-                          {u.isSuspended ? 'Unsuspend' : 'Suspend'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* TAB 3: MOCK TESTS STUDIO */}
+      {/* TAB 4: MOCK TESTS STUDIO */}
       {/* ------------------------------------------------------------- */}
       {activeTab === 'tests' && (
         <div className="space-y-4">

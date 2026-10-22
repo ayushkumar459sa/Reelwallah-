@@ -205,8 +205,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const ADMIN_EMAILS = ['ayush459sa@gmail.com', 'ushakannaujiya90@gmail.com'];
   const isAdmin = Boolean(
-    user && user.role === 'admin' && user.email.toLowerCase() === 'ayush459sa@gmail.com'
+    user && (user.role === 'admin' || ADMIN_EMAILS.includes(user.email.toLowerCase()))
   );
 
   return (

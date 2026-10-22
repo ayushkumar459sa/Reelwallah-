@@ -229,6 +229,20 @@ export interface SubscriptionRecord {
   expiresAt: string;
 }
 
+export interface UpiPaymentRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  planName: string;
+  amountInr: number;
+  upiId: string;
+  utrNumber: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  processedAt?: string;
+}
+
 export interface PlatformStats {
   totalAspirants: number;
   activeUsersToday: number;

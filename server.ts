@@ -19,8 +19,9 @@ import type {
   PlatformStats,
   CommunityPost,
   CommunityComment,
-  LiveChatMessage
-} from './src/types.js';
+  LiveChatMessage,
+  UpiPaymentRequest
+} from './src/types.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,12 +81,13 @@ interface DatabaseState {
   transactions: WalletTransaction[];
   withdrawals: WithdrawalRequest[];
   subscriptions: SubscriptionRecord[];
+  upiPaymentRequests: UpiPaymentRequest[];
   posts: CommunityPost[];
   homeChatMessages: LiveChatMessage[];
   auditLogs: { timestamp: string; action: string; details: string; userEmail: string }[];
 }
 
-import { masterMockTests } from './src/data/mockTestsData.js';
+import { masterMockTests } from './src/data/mockTestsData.ts';
 
 // Complete question bank of 50+ genuine syllabus-aligned IIT-JEE Main & Advanced tests
 const initialMockTests: MockTest[] = masterMockTests;
@@ -164,6 +166,19 @@ function loadDatabase(): DatabaseState {
 
       // Always ensure mock tests have the latest updated question bank
       data.mockTests = initialMockTests;
+      if (!data.upiPaymentRequests) {
+        data.upiPaymentRequests = [];
+      }
+
+      // Ensure platform owners have admin role
+      const ADMIN_EMAILS = ['ayush459sa@gmail.com', 'ushakannaujiya90@gmail.com'];
+      if (Array.isArray(data.users)) {
+        data.users.forEach((u: User) => {
+          if (ADMIN_EMAILS.includes(u.email.toLowerCase())) {
+            u.role = 'admin';
+          }
+        });
+      }
 
       return data;
     }
@@ -186,6 +201,7 @@ function loadDatabase(): DatabaseState {
     transactions: [],
     withdrawals: [],
     subscriptions: [],
+    upiPaymentRequests: [],
     auditLogs: []
   };
 
@@ -231,16 +247,19 @@ function authenticateUser(req: express.Request, res: express.Response, next: exp
   next();
 }
 
-// Admin role verification middleware - strictly restricted to ayush459sa@gmail.com
+// Admin role verification middleware - strictly restricted to platform owners
+export const ADMIN_EMAILS = ['ayush459sa@gmail.com', 'ushakannaujiya90@gmail.com'];
+
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
   const user = (req as any).user as User;
   if (!user) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const isAdmin = user.email.toLowerCase() === 'ayush459sa@gmail.com' && user.role === 'admin';
+  const normalizedEmail = (user.email || '').toLowerCase().trim();
+  const isAdmin = (ADMIN_EMAILS.includes(normalizedEmail) || user.role === 'admin') && user.role === 'admin';
   if (!isAdmin) {
-    return res.status(403).json({ error: 'Access denied. Administrator console is strictly restricted to platform owner (ayush459sa@gmail.com).' });
+    return res.status(403).json({ error: 'Access denied. Administrator console is strictly restricted to platform owners.' });
   }
 
   next();
@@ -273,7 +292,7 @@ app.post('/api/auth/register', (req, res) => {
     existingUser.password = password.trim();
     if (name && name.trim()) existingUser.name = name.trim();
   } else {
-    const isAdminEmail = normalizedEmail === 'ayush459sa@gmail.com';
+    const isAdminEmail = ADMIN_EMAILS.includes(normalizedEmail);
     const newId = 'user-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
     const userName = name?.trim() || normalizedEmail.split('@')[0];
     existingUser = {
@@ -333,6 +352,11 @@ app.post('/api/auth/login', (req, res) => {
   // If user had registered without a password, adopt this password
   if (!user.password) {
     user.password = password.trim();
+  }
+
+  // Ensure platform owners always retain admin privileges
+  if (ADMIN_EMAILS.includes(normalizedEmail)) {
+    user.role = 'admin';
   }
 
   // Update streak & last active
@@ -1489,8 +1513,76 @@ app.post('/api/subscription/cancel', authenticateUser, (req, res) => {
   return res.json({ success: true, message: 'Subscription cancelled. You will retain access until expiration.' });
 });
 
+// POST /api/subscription/submit-upi-request (Direct UPI to ushakannaujiya90@okhdfcbank & WhatsApp to 9839530890)
+app.post('/api/subscription/submit-upi-request', authenticateUser, (req, res) => {
+  const user = (req as any).user as User;
+  const { planName, amountInr, utrNumber, note } = req.body;
+
+  if (!utrNumber || typeof utrNumber !== 'string' || utrNumber.trim().length < 4) {
+    return res.status(400).json({ error: 'Please enter a valid 12-digit UTR or Transaction Reference number.' });
+  }
+
+  const cleanUtr = utrNumber.trim();
+  const targetUpiId = 'ushakannaujiya90@okhdfcbank';
+  const plan = planName || 'RW JEE Pro (Monthly)';
+  const amount = Number(amountInr) || 49;
+
+  // Check if same UTR already submitted
+  const existingReq = (db.upiPaymentRequests || []).find(
+    r => r.utrNumber.toLowerCase() === cleanUtr.toLowerCase() && r.status === 'approved'
+  );
+  if (existingReq) {
+    return res.status(400).json({ error: 'This UTR has already been verified and approved.' });
+  }
+
+  const newRequest: UpiPaymentRequest = {
+    id: 'upi-req-' + Date.now(),
+    userId: user.id,
+    userName: user.name || 'Aspirant',
+    userEmail: user.email,
+    planName: plan,
+    amountInr: amount,
+    upiId: targetUpiId,
+    utrNumber: cleanUtr,
+    status: 'pending',
+    submittedAt: new Date().toISOString()
+  };
+
+  if (!db.upiPaymentRequests) {
+    db.upiPaymentRequests = [];
+  }
+  db.upiPaymentRequests.unshift(newRequest);
+
+  // Pre-format WhatsApp link to owner: +919839530890
+  const waText = `*Payment Confirmation for Reel Wallah JEE Pro* 🎓%0A%0A*Name:* ${encodeURIComponent(user.name)}%0A*Email:* ${encodeURIComponent(user.email)}%0A*Plan:* ${encodeURIComponent(plan)}%0A*Amount Paid:* ₹${amount}%0A*Paid To UPI:* ${targetUpiId}%0A*UTR/Ref No:* ${encodeURIComponent(cleanUtr)}%0A*Date:* ${encodeURIComponent(new Date().toLocaleString('en-IN'))}%0A%0A_Please verify my payment and activate PRO subscription for my account!_`;
+  const whatsappUrl = `https://wa.me/919839530890?text=${waText}`;
+
+  db.auditLogs.unshift({
+    timestamp: new Date().toISOString(),
+    action: 'UPI_PAYMENT_SUBMITTED',
+    details: `User ${user.email} submitted UPI payment ₹${amount} with UTR ${cleanUtr} to ${targetUpiId}`,
+    userEmail: user.email
+  });
+
+  saveDatabase(db);
+
+  return res.json({
+    success: true,
+    message: 'Payment details submitted successfully! Details sent to Admin WhatsApp.',
+    request: newRequest,
+    whatsappUrl
+  });
+});
+
+// GET /api/subscription/my-requests
+app.get('/api/subscription/my-requests', authenticateUser, (req, res) => {
+  const user = (req as any).user as User;
+  const requests = (db.upiPaymentRequests || []).filter(r => r.userId === user.id);
+  return res.json({ requests });
+});
+
 // -----------------------------------------------------------------------------
-// SECURE ADMIN PANEL ENDPOINTS (ayush459sa@gmail.com)
+// SECURE ADMIN PANEL ENDPOINTS (ayush459sa@gmail.com & ushakannaujiya90@gmail.com)
 // -----------------------------------------------------------------------------
 
 // GET /api/admin/stats
@@ -1525,7 +1617,7 @@ app.post('/api/admin/users/:id/toggle-suspend', authenticateUser, requireAdmin, 
   const targetUser = db.users.find(u => u.id === id);
   if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
-  if (targetUser.email === 'ayush459sa@gmail.com') {
+  if (ADMIN_EMAILS.includes(targetUser.email.toLowerCase())) {
     return res.status(400).json({ error: 'Cannot suspend primary administrator.' });
   }
 
@@ -1540,6 +1632,118 @@ app.post('/api/admin/users/:id/toggle-suspend', authenticateUser, requireAdmin, 
 
   saveDatabase(db);
   return res.json({ success: true, user: targetUser });
+});
+
+// POST /api/admin/users/:id/toggle-pro (Direct 1-click Pro access grant by Admin)
+app.post('/api/admin/users/:id/toggle-pro', authenticateUser, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const targetUser = db.users.find(u => u.id === id);
+  if (!targetUser) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const willBeSubscribed = !targetUser.isSubscribed;
+  targetUser.isSubscribed = willBeSubscribed;
+
+  if (willBeSubscribed) {
+    targetUser.freeAttemptsLeft = 99999;
+    targetUser.subscriptionExpiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  db.auditLogs.unshift({
+    timestamp: new Date().toISOString(),
+    action: willBeSubscribed ? 'USER_PRO_GRANTED' : 'USER_PRO_REVOKED',
+    details: `Admin directly ${willBeSubscribed ? 'granted' : 'revoked'} PRO status for ${targetUser.email}`,
+    userEmail: (req as any).user.email
+  });
+
+  saveDatabase(db);
+  return res.json({
+    success: true,
+    message: willBeSubscribed ? `User ${targetUser.name} upgraded to PRO!` : `PRO status revoked for ${targetUser.name}`,
+    user: targetUser
+  });
+});
+
+// GET /api/admin/subscription-requests
+app.get('/api/admin/subscription-requests', authenticateUser, requireAdmin, (req, res) => {
+  return res.json({ requests: db.upiPaymentRequests || [] });
+});
+
+// POST /api/admin/subscription-requests/:id/approve
+app.post('/api/admin/subscription-requests/:id/approve', authenticateUser, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const request = (db.upiPaymentRequests || []).find(r => r.id === id);
+  if (!request) {
+    return res.status(404).json({ error: 'Payment request not found.' });
+  }
+
+  const targetUser = db.users.find(u => u.id === request.userId);
+  if (!targetUser) {
+    return res.status(404).json({ error: 'Associated user account not found.' });
+  }
+
+  // Upgrade user to PRO
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  targetUser.isSubscribed = true;
+  targetUser.freeAttemptsLeft = 99999;
+  targetUser.subscriptionExpiresAt = expiresAt;
+
+  request.status = 'approved';
+  request.processedAt = new Date().toISOString();
+
+  // Create official subscription record
+  const subscriptionRecord: SubscriptionRecord = {
+    id: 'sub-rec-' + Date.now(),
+    userId: targetUser.id,
+    userEmail: targetUser.email,
+    planName: request.planName,
+    amountInr: request.amountInr,
+    paymentId: 'upi_' + request.utrNumber,
+    orderId: 'upi_order_' + request.id,
+    status: 'active',
+    startDate: new Date().toISOString(),
+    expiresAt
+  };
+  db.subscriptions.unshift(subscriptionRecord);
+
+  db.auditLogs.unshift({
+    timestamp: new Date().toISOString(),
+    action: 'SUBSCRIPTION_APPROVED',
+    details: `Admin approved UPI payment #${request.id} (UTR: ${request.utrNumber}) for ${targetUser.email}. PRO activated!`,
+    userEmail: (req as any).user.email
+  });
+
+  saveDatabase(db);
+  return res.json({
+    success: true,
+    message: `Payment approved! User ${targetUser.email} is now upgraded to PRO.`,
+    request,
+    user: targetUser
+  });
+});
+
+// POST /api/admin/subscription-requests/:id/reject
+app.post('/api/admin/subscription-requests/:id/reject', authenticateUser, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  const request = (db.upiPaymentRequests || []).find(r => r.id === id);
+  if (!request) {
+    return res.status(404).json({ error: 'Payment request not found.' });
+  }
+
+  request.status = 'rejected';
+  request.processedAt = new Date().toISOString();
+
+  db.auditLogs.unshift({
+    timestamp: new Date().toISOString(),
+    action: 'SUBSCRIPTION_REJECTED',
+    details: `Admin rejected UPI payment #${request.id} for ${request.userEmail}. Reason: ${reason || 'UTR verification failed'}`,
+    userEmail: (req as any).user.email
+  });
+
+  saveDatabase(db);
+  return res.json({ success: true, request });
 });
 
 // POST /api/admin/users/:id/adjust-coins

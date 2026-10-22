@@ -4,7 +4,7 @@
       "id": "user-mvg8r7zk-4chw",
       "email": "ushakannaujiya90@gmail.com",
       "name": "Usha",
-      "avatar": "https://api.dicebear.com/7.x/identicon/svg?seed=ushakannaujiya90@gmail.com",
+      "avatar": "https://ui-avatars.com/api/?name=Usha&background=7857FF&color=ffffff&bold=true&size=200",
       "bio": "Aspiring IITian grinding JEE Main & Advanced.",
       "role": "user",
       "dreamIit": "IIT Bombay - CSE",
@@ -16,6 +16,23 @@
       "freeAttemptsLeft": 10,
       "isSubscribed": false,
       "createdAt": "2026-10-20T05:27:08.336Z"
+    },
+    {
+      "id": "user-mvj7ycvg-xkuv",
+      "email": "ayushbhaskar458@gmail.com",
+      "password": "ayush0001",
+      "name": "Raj",
+      "avatar": "https://ui-avatars.com/api/?name=Raj&background=7857FF&color=ffffff&bold=true&size=200",
+      "bio": "IIT-JEE Aspirant",
+      "role": "user",
+      "dreamIit": "IIT Bombay - CSE",
+      "targetYear": "2025",
+      "targetExam": "Both",
+      "studyStreak": 1,
+      "lastActiveDate": "2026-10-22T07:28:00.172Z",
+      "freeAttemptsLeft": 10,
+      "isSubscribed": false,
+      "createdAt": "2026-10-22T07:28:00.172Z"
     }
   ],
   "otps": {
@@ -38,12 +55,38 @@
     }
   },
   "sessions": {
-    "rw_token_dXNlci1tdmc4cjd6ay00Y2h3XzE3OTI0NzQwMjgzMzZfMC4xMzgyNjExNDIyMjA2MjQ1OA==": "user-mvg8r7zk-4chw"
+    "rw_token_dXNlci1tdmc4cjd6ay00Y2h3XzE3OTI0NzQwMjgzMzZfMC4xMzgyNjExNDIyMjA2MjQ1OA==": "user-mvg8r7zk-4chw",
+    "rw_token_dXNlci1tdmo3eWN2Zy14a3V2XzE3OTI2NTQwODAxNzJfMC4yMjAyMTkxOTQxMjQ2NDU2Mw==": "user-mvj7ycvg-xkuv"
   },
   "reels": [],
   "reelComments": [],
   "doubts": [],
-  "studyRooms": [],
+  "studyRooms": [
+    {
+      "id": "room-1792654123382",
+      "title": "Inorganic chemistry",
+      "category": "silent",
+      "topic": "P block",
+      "targetTimeMin": 50,
+      "activeCount": 2,
+      "hostName": "Raj",
+      "isSilent": true,
+      "ambientSound": "lofi",
+      "challenge": "Daily Goal: Complete revision target before timer ends!",
+      "messages": [
+        {
+          "id": "msg-1792654158205",
+          "roomId": "room-1792654123382",
+          "userId": "user-mvj7ycvg-xkuv",
+          "userName": "Raj",
+          "userAvatar": "https://ui-avatars.com/api/?name=Raj&background=7857FF&color=ffffff&bold=true&size=200",
+          "text": "Hii",
+          "isQuestion": false,
+          "createdAt": "2026-10-22T07:29:18.205Z"
+        }
+      ]
+    }
+  ],
   "mockTests": [
     {
       "id": "test-jee-main-2025-01",
@@ -8954,6 +8997,12 @@
   "withdrawals": [],
   "subscriptions": [],
   "auditLogs": [
+    {
+      "timestamp": "2026-10-22T07:28:00.172Z",
+      "action": "USER_REGISTERED",
+      "details": "User ayushbhaskar458@gmail.com registered with password.",
+      "userEmail": "ayushbhaskar458@gmail.com"
+    },
     {
       "timestamp": "2026-10-21T08:58:05.907Z",
       "action": "OTP_REQUESTED",
